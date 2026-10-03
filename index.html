@@ -50,6 +50,7 @@ textarea{width:100%;height:140px;border:1px solid var(--bd);border-radius:10px;b
 <header>
   <div class="row">
     <div style="flex:1;min-width:180px"><h1>📦 Inventario del Almacén</h1><div class="sub" id="tot"></div></div>
+    <button class="sec" id="xl">📊 Exportar a Excel</button>
     <button class="sec" id="bk">Copia de seguridad</button>
     <button id="nw">+ Nueva pieza</button>
   </div>
@@ -76,8 +77,54 @@ textarea{width:100%;height:140px;border:1px solid var(--bd);border-radius:10px;b
   <button class="sec" id="c2">Cerrar</button>
 </div></div>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
 <script>
 const $=id=>document.getElementById(id);
+function dims(src){return new Promise(r=>{const i=new Image();i.onload=()=>r([i.width,i.height]);i.onerror=()=>r([4,3]);i.src=src})}
+$('xl').onclick=async()=>{
+  if(!window.ExcelJS){alert('No se pudo cargar el exportador. Comprueba la conexión a internet e inténtalo de nuevo.');return}
+  if(!items.length){alert('No hay piezas para exportar.');return}
+  const btn=$('xl');btn.disabled=true;btn.textContent='Generando…';
+  try{
+    const list=[...items].sort((a,b)=>a.name.localeCompare(b.name,'es'));
+    const wb=new ExcelJS.Workbook();
+    const ws=wb.addWorksheet('Inventario',{
+      pageSetup:{paperSize:9,orientation:'portrait',fitToPage:true,fitToWidth:1,fitToHeight:0,horizontalCentered:true,
+        margins:{left:.5,right:.5,top:.7,bottom:.7,header:.3,footer:.3},printTitlesRow:'3:3'},
+      headerFooter:{oddFooter:'&LInventario del Almacén&RPágina &P de &N'}});
+    ws.columns=[{width:22},{width:46},{width:16}];
+    const fecha=new Date().toLocaleDateString('es-ES');
+    ws.mergeCells('A1:C1');
+    const t=ws.getCell('A1');t.value='Inventario del Almacén — '+fecha;
+    t.font={bold:true,size:16};t.alignment={horizontal:'center',vertical:'middle'};ws.getRow(1).height=30;
+    const h=ws.getRow(3);h.values=['Foto','Nombre de la pieza','Cantidad'];h.height=24;
+    h.eachCell(c=>{c.font={bold:true,color:{argb:'FFFFFFFF'},size:12};c.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FF1F4E79'}};
+      c.alignment={horizontal:'center',vertical:'middle'};c.border={top:{style:'thin'},bottom:{style:'thin'},left:{style:'thin'},right:{style:'thin'}}});
+    const bd={top:{style:'thin',color:{argb:'FF999999'}},bottom:{style:'thin',color:{argb:'FF999999'}},left:{style:'thin',color:{argb:'FF999999'}},right:{style:'thin',color:{argb:'FF999999'}}};
+    let total=0;
+    for(let k=0;k<list.length;k++){
+      const p=list[k],rn=4+k,row=ws.getRow(rn);
+      row.values=['',p.name,p.qty];row.height=90;total+=p.qty;
+      for(let c=1;c<=3;c++){row.getCell(c).border=bd}
+      row.getCell(2).alignment={vertical:'middle',wrapText:true};row.getCell(2).font={size:13,bold:true};
+      row.getCell(3).alignment={horizontal:'center',vertical:'middle'};
+      row.getCell(3).font={size:16,bold:true,color:{argb:p.qty===0?'FFD93025':'FF000000'}};
+      if(p.img){
+        const [w,hh]=await dims(p.img),s=Math.min(150/w,112/hh),iw=w*s,ih=hh*s;
+        const id=wb.addImage({base64:p.img,extension:'jpeg'});
+        ws.addImage(id,{tl:{col:(159-iw)/2/159,row:(rn-1)+(120-ih)/2/120},ext:{width:iw,height:ih},editAs:'oneCell'});
+      }else{row.getCell(1).value='Sin foto';row.getCell(1).alignment={horizontal:'center',vertical:'middle'};row.getCell(1).font={color:{argb:'FF888888'}}}
+    }
+    const tr=ws.getRow(4+list.length);tr.values=['','TOTAL de unidades',total];tr.height=26;
+    tr.eachCell({includeEmpty:true},c=>{c.font={bold:true,size:13};c.border={top:{style:'medium'},bottom:{style:'medium'}};c.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFDDEBF7'}}});
+    tr.getCell(3).alignment={horizontal:'center',vertical:'middle'};tr.getCell(2).alignment={horizontal:'right',vertical:'middle'};
+    ws.views=[{state:'frozen',ySplit:3}];
+    const buf=await wb.xlsx.writeBuffer();
+    const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}));
+    a.download='Inventario_'+new Date().toISOString().slice(0,10)+'.xlsx';document.body.appendChild(a);a.click();a.remove();
+  }catch(e){alert('Error al generar el Excel: '+e.message)}
+  btn.disabled=false;btn.textContent='📊 Exportar a Excel';
+};
 let db=null,items=[],editId=null,photo='';
 function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 function openDB(){return new Promise((res,rej)=>{try{const r=indexedDB.open('almacen',1);r.onupgradeneeded=()=>r.result.createObjectStore('p',{keyPath:'id'});r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)}catch(e){rej(e)}})}
